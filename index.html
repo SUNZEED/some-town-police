@@ -1,3 +1,104 @@
+const SHEET_HISTORY_NAME = 'วันที่';   
+const SHEET_CARS_NAME = 'รายการรถ';    
+
+function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const carSheet = ss.getSheetByName(SHEET_CARS_NAME);
+  
+  let cars = [];
+  if (carSheet && carSheet.getLastRow() > 1) {
+    const carData = carSheet.getRange(2, 1, carSheet.getLastRow() - 1, 6).getValues();
+    cars = carData.map((row, index) => {
+      let carObj;
+      try { 
+        carObj = JSON.parse(row[5]); 
+      } catch(err) { 
+        try {
+           carObj = JSON.parse(row[4]);
+        } catch(err2) {
+           // ระบบกู้คืนข้อมูลอัตโนมัติหาก JSON พัง (ป้องกันรถหาย)
+           carObj = {
+               id: Date.now() + index, 
+               plate: String(row[0] || '').trim(),
+               name: String(row[1] || '').trim(),
+               category: String(row[2] || '').split(' / ')[0].trim() || 'อื่นๆ',
+               status: String(row[3] || '') === 'ถูกเช่า' ? 'busy' : 'available',
+               ownerType: String(row[2] || '').includes('กะปิ') ? 'kapi' : 'owner',
+               imageUrl: String(row[4] || '').trim(),
+               price: 0,
+               isTurbo: false,
+               isHidden: false
+           };
+        }
+      }
+      
+      if (row[4] && row[4].toString().trim().startsWith('http')) {
+          carObj.imageUrl = row[4].toString().trim(); 
+      }
+      return carObj; 
+    }).filter(c => c !== null);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ cars: cars }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetHistory = ss.getSheetByName(SHEET_HISTORY_NAME);
+  const sheetCars = ss.getSheetByName(SHEET_CARS_NAME);
+
+  let data;
+  try {
+    data = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: "ข้อมูลพัง" })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (data.action === 'rent' && data.item) {
+    const lastRow = sheetHistory.getLastRow();
+    let nextId = 1;
+    let lastTotal = 0;
+
+    if (lastRow > 1) {
+      nextId = Number(sheetHistory.getRange(lastRow, 1).getValue()) + 1;
+      const prevTotal = sheetHistory.getRange(lastRow, 6).getValue();
+      lastTotal = isNaN(prevTotal) || prevTotal === "" ? 0 : Number(prevTotal);
+    }
+
+    const income = Number(data.income) || 0;
+    const expense = Number(data.expense) || 0;
+    const total = lastTotal + income - expense;
+    const dateStr = Utilities.formatDate(new Date(), "GMT+7", "dd/M/yyyy, HH:mm:ss");
+
+    sheetHistory.appendRow([nextId, dateStr, data.item, income, expense, total]);
+  }
+
+  if (data.cars && Array.isArray(data.cars) && data.cars.length > 0) {
+    if (sheetCars.getLastRow() > 1) {
+       sheetCars.getRange(2, 1, sheetCars.getLastRow() - 1, 6).clearContent();
+    }
+
+    const newRows = data.cars.map(c => {
+       const ownerText = c.ownerType === 'kapi' ? 'กะปิ' : 'เจ้าของ';
+       const statusText = c.status === 'busy' ? 'ถูกเช่า' : 'ว่าง';
+       return [
+         c.plate, 
+         c.name, 
+         `${c.category} / ${ownerText}`, 
+         statusText, 
+         c.imageUrl,
+         JSON.stringify(c) 
+       ];
+    });
+
+    sheetCars.getRange(2, 1, newRows.length, 6).setValues(newRows);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ success: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -19,79 +120,25 @@
             --text-light: #EAEAEA;
             --border-color: #262630;
         }
-
-        body {
-            font-family: 'Kanit', sans-serif;
-            margin: 0; padding: 0;
-            background: var(--bg-dark);
-            min-height: 100vh;
-            color: var(--text-light);
-            background-image: radial-gradient(circle at 50% 0%, #1a1a24 0%, transparent 70%);
-        }
-
-        header {
-            background: rgba(11, 11, 14, 0.85);
-            backdrop-filter: blur(12px);
-            padding: 15px 30px;
-            display: flex; justify-content: space-between; align-items: center;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.8);
-            position: sticky; top: 0; z-index: 100;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        header h1 {
-            margin: 0; color: #fff; font-size: 24px; font-weight: 800;
-            display: flex; align-items: center; gap: 10px;
-            text-shadow: 0 0 15px var(--summer-orange-glow);
-            letter-spacing: 1px; cursor: pointer; user-select: none;
-        }
+        body { font-family: 'Kanit', sans-serif; margin: 0; padding: 0; background: var(--bg-dark); min-height: 100vh; color: var(--text-light); background-image: radial-gradient(circle at 50% 0%, #1a1a24 0%, transparent 70%); }
+        header { background: rgba(11, 11, 14, 0.85); backdrop-filter: blur(12px); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.8); position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--border-color); }
+        header h1 { margin: 0; color: #fff; font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 10px; text-shadow: 0 0 15px var(--summer-orange-glow); letter-spacing: 1px; cursor: pointer; user-select: none; }
         header h1:hover { text-shadow: 0 0 25px var(--summer-orange); }
-
         .tab-menu { display: flex; gap: 12px; }
-        .tab-btn {
-            background: transparent; color: #888; border: 1px solid transparent;
-            padding: 8px 20px; border-radius: 8px; font-family: 'Kanit'; 
-            font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;
-        }
+        .tab-btn { background: transparent; color: #888; border: 1px solid transparent; padding: 8px 20px; border-radius: 8px; font-family: 'Kanit'; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
         .tab-btn:hover { color: #fff; background: rgba(255,255,255,0.05); }
-        .tab-btn.active {
-            background: rgba(255, 94, 58, 0.1); border-color: var(--summer-orange); 
-            color: var(--summer-orange); box-shadow: 0 0 15px var(--summer-orange-glow) inset;
-        }
-
+        .tab-btn.active { background: rgba(255, 94, 58, 0.1); border-color: var(--summer-orange); color: var(--summer-orange); box-shadow: 0 0 15px var(--summer-orange-glow) inset; }
         .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
         .page { display: none; }
         .page.active { display: block; animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-        .controls {
-            display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap;
-            background: rgba(22, 22, 28, 0.7); padding: 20px; border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3); border: 1px solid var(--border-color); align-items: center;
-            backdrop-filter: blur(10px);
-        }
-        .controls input[type="text"], .controls input[type="password"], .controls input[type="number"], .controls select {
-            padding: 12px 18px; border-radius: 8px; border: 1px solid #333; 
-            font-family: 'Kanit'; flex: 1; min-width: 150px; background: #0F0F13; color: #fff;
-            transition: all 0.3s ease;
-        }
-        .controls input:focus, .controls select:focus {
-            border-color: var(--summer-orange); outline: none; box-shadow: 0 0 10px var(--summer-orange-glow);
-        }
-
+        .controls { display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; background: rgba(22, 22, 28, 0.7); padding: 20px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); border: 1px solid var(--border-color); align-items: center; backdrop-filter: blur(10px); }
+        .controls input[type="text"], .controls input[type="password"], .controls input[type="number"], .controls select { padding: 12px 18px; border-radius: 8px; border: 1px solid #333; font-family: 'Kanit'; flex: 1; min-width: 150px; background: #0F0F13; color: #fff; transition: all 0.3s ease; }
+        .controls input:focus, .controls select:focus { border-color: var(--summer-orange); outline: none; box-shadow: 0 0 10px var(--summer-orange-glow); }
         .view-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
-        .view-btn {
-            background: #2A2A35; color: #aaa; border: 1px solid #444;
-            padding: 8px 16px; border-radius: 20px; font-family: 'Kanit'; cursor: pointer; font-size: 14px;
-            transition: 0.3s;
-        }
+        .view-btn { background: #2A2A35; color: #aaa; border: 1px solid #444; padding: 8px 16px; border-radius: 20px; font-family: 'Kanit'; cursor: pointer; font-size: 14px; transition: 0.3s; }
         .view-btn.active { background: var(--summer-blue); color: #000; border-color: var(--summer-blue); font-weight: bold; }
-
-        .btn {
-            border: none; padding: 12px 20px; border-radius: 8px; font-family: 'Kanit'; 
-            cursor: pointer; transition: all 0.3s ease; 
-            font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;
-        }
+        .btn { border: none; padding: 12px 20px; border-radius: 8px; font-family: 'Kanit'; cursor: pointer; transition: all 0.3s ease; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
         .btn:hover { transform: translateY(-2px); filter: brightness(1.15); }
         .btn:active { transform: translateY(1px); }
         .btn-add { background: linear-gradient(135deg, #00C9FF, #0082FF); color: white; box-shadow: 0 4px 15px var(--summer-blue-glow); }
@@ -100,78 +147,46 @@
         .btn-return:hover { background: rgba(255, 179, 0, 0.1); box-shadow: 0 0 15px rgba(255, 179, 0, 0.3); }
         .btn-edit { background: #2A2A35; color: #fff; border: 1px solid #444; }
         .btn-delete { background: linear-gradient(135deg, #ff4757, #c0392b); color: #fff; box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4); }
-
         .car-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px; }
-        .car-card {
-            background: var(--card-bg); border-radius: 12px; overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column;
-            border: 1px solid var(--border-color); position: relative; transition: all 0.3s ease;
-        }
+        .car-card { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; border: 1px solid var(--border-color); position: relative; transition: all 0.3s ease; }
         .car-card:hover { transform: translateY(-5px); border-color: #444; box-shadow: 0 15px 40px rgba(0,0,0,0.7); }
         .car-card.busy { border-color: #ff4757; opacity: 0.8; }
-        
         .car-image-container { position: relative; width: 100%; height: 180px; background: #000; }
         .car-image { width: 100%; height: 100%; object-fit: cover; transition: 0.3s; }
         .car-card.busy .car-image { filter: grayscale(100%) brightness(40%); }
-        .cross-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 80px; color: rgba(255, 71, 87, 0.8); text-shadow: 0 0 20px #000;
-            pointer-events: none;
-        }
-
+        .cross-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 80px; color: rgba(255, 71, 87, 0.8); text-shadow: 0 0 20px #000; pointer-events: none; }
         .tags-container { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
         .tag-turbo { background: #ff0055; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; box-shadow: 0 2px 10px rgba(255,0,85,0.5); }
         .tag-owner { background: var(--summer-blue); color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; }
         .tag-kapi { background: var(--summer-green); color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; }
-
         .car-details { padding: 20px; flex-grow: 1; }
         .car-title { font-size: 20px; margin: 0 0 12px 0; display: flex; align-items: center; justify-content: space-between; font-weight: 800; color: #fff; text-transform: uppercase;}
         .badge { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; background: #262630; color: #aaa; letter-spacing: 0.5px; text-transform: uppercase;}
-        
         .rental-info { background: rgba(0, 0, 0, 0.4); padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 14px; text-align: center; color: #ccc; border: 1px solid #333; }
         .card-actions { display: flex; gap: 10px; padding: 15px 20px; background: rgba(0, 0, 0, 0.2); border-top: 1px solid var(--border-color); }
-
         .copy-btn { cursor: pointer; font-size: 14px; margin-left: 8px; opacity: 0.6; transition: 0.2s; }
         .copy-btn:hover { opacity: 1; transform: scale(1.1); }
-
-        .dashboard-section {
-            background: var(--card-bg); padding: 25px; border-radius: 12px; margin-bottom: 25px;
-            border: 1px solid var(--border-color); box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        }
+        .dashboard-section { background: var(--card-bg); padding: 25px; border-radius: 12px; margin-bottom: 25px; border: 1px solid var(--border-color); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
         .dashboard-section h4 { margin-top: 0; color: var(--summer-orange); font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; font-weight: 800; }
-
         table { width: 100%; background: transparent; border-collapse: collapse; }
         th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 15px; color: #d0d0d0;}
         th { background: rgba(0,0,0,0.3); color: #888; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 1px;}
         .summary-row { background: rgba(255, 94, 58, 0.1); font-weight: bold; }
         .summary-row td { color: #fff; border-top: 2px solid var(--summer-orange); }
-
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(5px); }
         .modal-content { background: #121216; padding: 35px; border-radius: 16px; width: 90%; max-width: 450px; border: 1px solid var(--summer-orange); box-shadow: 0 0 40px var(--summer-orange-glow); color: white; animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); max-height: 90vh; overflow-y: auto; }
         @keyframes modalPop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        
         .form-group { margin-bottom: 20px; }
         .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #aaa; font-size: 14px;}
         .form-group input, .form-group select { width: 100%; padding: 12px 15px; border: 1px solid #333; border-radius: 8px; box-sizing: border-box; font-family: 'Kanit'; background: #0A0A0C; color: white; font-size: 15px; transition: all 0.3s; }
         .form-group input[type="checkbox"] { width: auto; transform: scale(1.5); margin-right: 10px; cursor: pointer; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 30px; }
-
         .manage-table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid var(--border-color); }
         .manage-table th, .manage-table td { padding: 18px 20px; border-bottom: 1px solid var(--border-color); text-align: left; }
         .manage-table th { background: rgba(0,0,0,0.5); color: var(--summer-orange); font-weight: 800; text-transform: uppercase; font-size: 14px; letter-spacing: 0.5px; }
-
-        .cat-badge-edit {
-            display: inline-flex; align-items: center; gap: 8px; background: #222; 
-            padding: 6px 15px; border-radius: 20px; font-size: 14px; border: 1px solid #444;
-            font-weight: 600;
-        }
-        .cat-del-btn {
-            background: none; border: none; color: #ff4757; font-weight: bold; cursor: pointer; padding: 2px 6px; font-size: 16px;
-            transition: 0.2s;
-        }
+        .cat-badge-edit { display: inline-flex; align-items: center; gap: 8px; background: #222; padding: 6px 15px; border-radius: 20px; font-size: 14px; border: 1px solid #444; font-weight: 600; }
+        .cat-del-btn { background: none; border: none; color: #ff4757; font-weight: bold; cursor: pointer; padding: 2px 6px; font-size: 16px; transition: 0.2s; }
         .cat-del-btn:hover { color: #fff; background: #ff4757; border-radius: 50%; }
-
     </style>
 </head>
 <body>
@@ -188,35 +203,27 @@
 </header>
 
 <div class="container">
-    <!-- หน้า 1: ปล่อยเช่า -->
     <div id="carsPage" class="page active">
         <div class="controls">
             <input type="text" id="searchInput" placeholder="🔍 ค้นหารถ, ทะเบียน..." oninput="renderCars()">
             <select id="categoryFilter" onchange="renderCars()"></select>
         </div>
-        
         <div class="view-filters">
             <button class="view-btn active" id="btnFilterAll" onclick="setOwnerFilter('all')">ดูรวมทั้งหมด</button>
             <button class="view-btn" id="btnFilterKapi" onclick="setOwnerFilter('kapi')">ดูเฉพาะรถกะปื</button>
             <button class="view-btn" id="btnFilterOwner" onclick="setOwnerFilter('owner')">ดูเฉพาะรถaxis</button>
-            
             <div style="border-left: 2px solid #333; height: 30px; margin: 0 10px;"></div>
-            
             <button class="view-btn active" id="btnFilterAvailableAll" onclick="setAvailableFilter('all')">ดูรถทั้งหมด</button>
             <button class="view-btn" id="btnFilterAvailableOnly" onclick="setAvailableFilter('available')">เฉพาะรถว่าง 🟢</button>
-
-            <!-- ซ่อนเมนูจัดการ (สแกนสัญญา) ถ้ายังไม่ล็อคอิน -->
             <div id="adminActionButtons" style="margin-left: auto; display: none; gap: 10px;">
                 <button class="btn btn-add" style="background: linear-gradient(135deg, #8e44ad, #9b59b6); padding: 12px 18px; margin: 0; font-size: 16px;" onclick="openOcrPasteModal()">
                     📄✨ สแกนสัญญา (Ctrl+V)
                 </button>
             </div>
         </div>
-
         <div class="car-grid" id="carGrid"></div>
     </div>
 
-    <!-- หน้า 2: จัดการหลังบ้าน -->
     <div id="managePage" class="page">
         <div id="loginScreen" style="background: rgba(22,22,28,0.8); padding: 50px 40px; border-radius: 16px; max-width: 400px; margin: 80px auto; text-align: center; border: 1px solid #333;">
             <h2 style="color: var(--summer-orange);">🔒 SYSTEM LOGIN</h2>
@@ -237,7 +244,6 @@
                 <button class="btn btn-edit" style="background: transparent; color: #ff4757; border-color: #ff4757;" onclick="logoutAdmin()">🚪 ออกจากระบบ</button>
             </div>
 
-            <!-- โซน 1: แอดรถ -->
             <div class="controls">
                 <h3 style="margin: 0; color: #fff; width: 100%; font-weight: 800;">+ เพิ่มรถใหม่เข้าระบบ</h3>
                 <div style="display:flex; width:100%; gap:15px; flex-wrap:wrap;">
@@ -247,13 +253,11 @@
                 </div>
                 <div style="display:flex; width:100%; gap:15px; flex-wrap:wrap; align-items:center; margin-top:10px;">
                     <input type="text" id="newCarImg" placeholder="URL รูปภาพรถ (Link)" style="flex:2;">
-                    
                     <select id="newCarOwnerType" style="flex:1;">
                         <option value="owner">รถaxis</option>
                         <option value="kapi">รถกะปื</option>
                     </select>
                     <input type="text" id="newCarOwnerName" placeholder="ชื่อเจ้าของรถ (เช่น พี่เอ)" style="flex:1;">
-
                     <label style="color:#fff; display:flex; align-items:center; gap:5px; flex:1;">
                         <input type="checkbox" id="newCarTurbo"> ติดเทอร์โบแล้ว
                     </label>
@@ -261,7 +265,6 @@
                 </div>
             </div>
 
-            <!-- โซน 2: หมวดหมู่ -->
             <div class="controls">
                 <h3 style="margin: 0; color: #fff; width: 100%; font-weight: 800;">🏷️ จัดการหมวดหมู่รถ</h3>
                 <div style="display:flex; width:100%; gap:15px; align-items:center;">
@@ -284,7 +287,6 @@
                 <tbody id="manageTableBody"></tbody>
             </table>
 
-            <!-- โซนอันตราย -->
             <div class="controls" style="background: rgba(255, 71, 87, 0.05); border: 1px solid rgba(255, 71, 87, 0.3); margin-top: 30px;">
                 <h3 style="margin: 0; color: #ff4757; width: 100%; font-weight: 800;">⚠️ โซนล้างข้อมูล (รหัส PIN: 1234)</h3>
                 <button class="btn btn-delete" style="flex: 1;" onclick="clearHistoryWithPIN()">🗑️ ล้างประวัติรายได้ทั้งหมด</button>
@@ -293,19 +295,16 @@
         </div>
     </div>
     
-    <!-- หน้า 3: สรุปผล -->
     <div id="dashboardPage" class="page">
         <div class="view-filters" style="margin-bottom: 30px;">
             <button class="view-btn active" id="btnDashFilterAll" onclick="setDashFilter('all')">ดูรวมทั้งหมด</button>
             <button class="view-btn" id="btnDashFilterKapi" onclick="setDashFilter('kapi')">ดูเฉพาะยอดรถกะปื</button>
             <button class="view-btn" id="btnDashFilterOwner" onclick="setDashFilter('owner')">ดูเฉพาะยอดรถaxis</button>
         </div>
-
         <div id="overallDashboardContainer"></div>
     </div>
 </div>
 
-<!-- Modal วางรูปภาพ (Ctrl+V) -->
 <div class="modal" id="ocrPasteModal">
     <div class="modal-content" style="text-align: center;">
         <h2 style="color: var(--summer-blue); margin-top: 0;">📸 สแกนสัญญาเช่า (AI)</h2>
@@ -320,22 +319,18 @@
     </div>
 </div>
 
-<!-- Modal ลงทะเบียนสัญญาเช่ารถ -->
 <div class="modal" id="rentModal">
     <div class="modal-content">
         <h2 style="color: var(--summer-orange); margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 15px;">📋 ลงทะเบียนสัญญาเช่ารถ</h2>
         <input type="hidden" id="rentCarId">
-        
         <div class="form-group">
             <label>ทะเบียนรถ</label>
             <input type="text" id="rentCarName" disabled style="color: var(--summer-orange); background: rgba(255, 94, 58, 0.05); font-weight: bold;">
         </div>
-        
         <div class="form-group">
             <label>ระยะเวลาสิ้นสุดสัญญา</label>
             <input type="datetime-local" id="rentEndTime" required oninput="calculateDuration()" onchange="calculateDuration()">
         </div>
-        
         <div class="form-group">
             <label>
                 ยอดเงินที่รับมา (sm)
@@ -343,7 +338,6 @@
             </label>
             <input type="text" id="rentPrice" placeholder="ระบุจำนวนเงิน (เช่น 1,000)" style="border-color: var(--summer-green); box-shadow: 0 0 10px rgba(0, 230, 118, 0.2);" oninput="formatNumber(this)">
         </div>
-
         <div class="modal-actions">
             <button class="btn" style="background: transparent; border: 1px solid #444; color:#888" onclick="closeModal('rentModal')">CANCEL</button>
             <button class="btn btn-rent" onclick="confirmRent()">CONFIRM</button>
@@ -351,12 +345,10 @@
     </div>
 </div>
 
-<!-- Modal แก้ไขรถ -->
 <div class="modal" id="editModal">
     <div class="modal-content">
         <h2 style="color: var(--summer-blue); margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 15px;">✏️ แก้ไขข้อมูลรถ</h2>
         <input type="hidden" id="editCarId">
-        
         <div style="display:flex; gap:10px;">
             <div class="form-group" style="flex:1;">
                 <label>ชื่อรุ่นรถ</label>
@@ -367,17 +359,14 @@
                 <input type="text" id="editCarPlate">
             </div>
         </div>
-
         <div class="form-group">
             <label>หมวดหมู่</label>
             <select id="editCarCategory"></select>
         </div>
-        
         <div class="form-group">
             <label>URL รูปภาพรถ</label>
             <input type="text" id="editCarImg">
         </div>
-
         <div style="display:flex; gap:10px;">
             <div class="form-group" style="flex:1;">
                 <label>ประเภทเจ้าของ</label>
@@ -391,13 +380,11 @@
                 <input type="text" id="editCarOwnerName" placeholder="เช่น พี่เอ (ไม่บังคับ)">
             </div>
         </div>
-
         <div class="form-group">
             <label style="display:flex; align-items:center;">
                 <input type="checkbox" id="editCarTurbo"> ติดเทอร์โบแล้ว
             </label>
         </div>
-        
         <div class="modal-actions">
             <button class="btn" style="background: transparent; border: 1px solid #444; color:#888" onclick="closeModal('editModal')">ยกเลิก</button>
             <button class="btn btn-add" onclick="saveEditCar()">บันทึกข้อมูล</button>
@@ -406,12 +393,11 @@
 </div>
 
 <script>
-    const scriptURL = 'https://script.google.com/macros/s/AKfycbxVkgPyZ6nHMpqaa2s92YUpDhLxEybOduquKjNv-NJKuNQczQOmWjpFeLfFWi7aA5w-/exec';
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbyrHnzwtyO1BitldzHnYvxKSit2iZmjFqdvNSBvDAd8PYFIZj5VUF_vl_e3IY7XOkIr/exec';
     
     const ADMIN_USER = "Kapi";
     const ADMIN_PASS = "worawich0625";
 
-    // --- ฟังก์ชันสำหรับซ่อน/แสดงปุ่มต่างๆ ตามสถานะการล็อคอิน ---
     function updateAuthUI() {
         const isLoggedIn = sessionStorage.getItem('isAdminLoggedIn') === 'true';
         const adminControls = document.getElementById('adminActionButtons');
@@ -421,7 +407,6 @@
         renderCars();
     }
     
-    // --- ฟังก์ชันดึงข้อมูลจาก Cloud มาโชว์ ---
     function fetchLatestCars() {
         fetch(scriptURL)
             .then(res => res.json())
@@ -440,16 +425,13 @@
             .catch(err => console.log('Sync Error:', err));
     }
 
-    // ดึงข้อมูลครั้งแรกที่เปิดเว็บ และอัปเดตหน้าตาปุ่มล็อคอิน
     window.addEventListener('DOMContentLoaded', () => {
         updateAuthUI();
         fetchLatestCars();
     });
     
-    // ซิงค์อัตโนมัติทุกๆ 10 วิ
     setInterval(fetchLatestCars, 10000); 
 
-    // ตั้งค่าตัวแปร
     const customCategoryOrder = ["ประมูล", "TOPDO", "ไฟฟ้า", "น้ำมัน", "รถบิน", "480โล", "300โล"];
     let defaultCategories = ["ประมูล", "TOPDO", "ไฟฟ้า", "น้ำมัน", "รถบิน", "480โล", "300โล"];
     let defaultCars = [];
@@ -692,7 +674,6 @@
         img.onload = async () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            // ขยายภาพ 2.5 เท่า เพื่อให้ AI อ่านตัวอักษรเล็กๆ ออกได้อย่างชัดเจน
             canvas.width = img.width * 2.5;
             canvas.height = img.height * 2.5;
             ctx.imageSmoothingEnabled = false; 
@@ -715,7 +696,6 @@
 
                     let cleanText = text.replace(/[^A-Z0-9ก-ฮ]/g, '').replace(/O/g, '0').replace(/I/g, '1');
 
-                    // 1. ค้นหาแบบเป๊ะๆ 100% (ลบเว้นวรรคออกแล้วเทียบ)
                     let sortedCars = [...cars].sort((a,b) => b.plate.length - a.plate.length);
                     for(let car of sortedCars) {
                         let cleanPlate = car.plate.replace(/[^A-Z0-9ก-ฮ]/g, '').toUpperCase().replace(/O/g, '0').replace(/I/g, '1');
@@ -726,7 +706,6 @@
                         }
                     }
 
-                    // 2. ค้นหาแบบกลุ่มคำ (กรณีเว้นวรรคผิด หรืออ่านเพี้ยนนิดหน่อย แต่บังคับว่าต้องเป็นกลุ่มเดียวกัน)
                     if (!matchedCar && cleanText.length > 0) {
                         let tokens = text.replace(/\n/g, ' ').split(/\s+/).filter(t => t.length > 0);
                         let searchPhrases = [];
@@ -1005,7 +984,6 @@
         let kapiIncome = 0;
         let ownerIncome = 0;
 
-        // คำนวณส่วนแบ่งอัตโนมัติจากประเภทของรถ
         if (car.ownerType === 'kapi') { 
             kapiIncome = price; 
             ownerIncome = 0;
@@ -1087,12 +1065,17 @@
         const name = document.getElementById('editCarName').value;
         const plate = document.getElementById('editCarPlate').value;
         const category = document.getElementById('editCarCategory').value;
-        const imageUrl = document.getElementById('editCarImg').value;
+        const imageUrl = document.getElementById('editCarImg').value.trim();
         const ownerType = document.getElementById('editCarOwnerType').value;
         const ownerName = document.getElementById('editCarOwnerName').value;
         const isTurbo = document.getElementById('editCarTurbo').checked;
 
         if(!name || !plate) return alert("ใส่ชื่อและทะเบียนให้ครบครับ");
+        
+        // บล็อกลิ้งก์ขยะ
+        if (imageUrl.startsWith('data:image') || imageUrl.length > 1000) {
+            return alert("❌ ไม่สามารถใช้รูปภาพแบบคัดลอกโค้ด (Base64) หรือลิ้งก์ที่ยาวเกินไปได้\n\nจะทำให้ระบบฐานข้อมูลพัง กรุณาฝากรูปที่เว็บ pic.in.th แล้วนำลิ้งก์มาใส่แทนครับ");
+        }
 
         const index = cars.findIndex(c => c.id === id);
         cars[index].name = name;
@@ -1175,7 +1158,7 @@
         const name = document.getElementById('newCarName').value;
         const platesInput = document.getElementById('newCarPlate').value;
         const category = document.getElementById('newCarCategory').value;
-        const imageUrl = document.getElementById('newCarImg').value;
+        const imageUrl = document.getElementById('newCarImg').value.trim();
         const isTurbo = document.getElementById('newCarTurbo').checked;
         const ownerType = document.getElementById('newCarOwnerType').value;
         const ownerName = document.getElementById('newCarOwnerName').value;
@@ -1184,6 +1167,11 @@
 
         if(!name || plates.length === 0) return alert("ใส่ชื่อและทะเบียนให้ครบครับ");
         
+        // บล็อกลิ้งก์ขยะ
+        if (imageUrl.startsWith('data:image') || imageUrl.length > 1000) {
+            return alert("❌ ไม่สามารถใช้รูปภาพแบบคัดลอกโค้ด (Base64) หรือลิ้งก์ที่ยาวเกินไปได้\n\nจะทำให้ระบบฐานข้อมูลพัง กรุณาฝากรูปที่เว็บ pic.in.th แล้วนำลิ้งก์มาใส่แทนครับ");
+        }
+
         let newId = cars.length > 0 ? Math.max(...cars.map(c => c.id)) : 0;
         
         plates.forEach(plate => {
@@ -1276,9 +1264,7 @@
 
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    // Init
     renderCategoryDropdowns();
 </script>
-
 </body>
 </html>
