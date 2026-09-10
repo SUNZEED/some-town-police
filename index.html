@@ -27,7 +27,7 @@
         .tab-btn { background: transparent; color: #888; border: 1px solid transparent; padding: 8px 20px; border-radius: 8px; font-family: 'Kanit'; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
         .tab-btn:hover { color: #fff; background: rgba(255,255,255,0.05); }
         .tab-btn.active { background: rgba(255, 94, 58, 0.1); border-color: var(--summer-orange); color: var(--summer-orange); box-shadow: 0 0 15px var(--summer-orange-glow) inset; }
-        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .container { max-width: 96%; margin: 30px auto; padding: 0 20px; }
         .page { display: none; }
         .page.active { display: block; animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -46,15 +46,36 @@
         .btn-return:hover { background: rgba(255, 179, 0, 0.1); box-shadow: 0 0 15px rgba(255, 179, 0, 0.3); }
         .btn-edit { background: #2A2A35; color: #fff; border: 1px solid #444; }
         .btn-delete { background: linear-gradient(135deg, #ff4757, #c0392b); color: #fff; box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4); }
-        .car-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px; }
+        
+        /* ปุ่มจองและยกเลิกจอง */
+        .btn-book { background: transparent; color: var(--summer-blue); border: 2px solid var(--summer-blue); box-sizing: border-box; }
+        .btn-book:hover { background: rgba(0, 210, 255, 0.1); box-shadow: 0 0 15px var(--summer-blue-glow); }
+        .btn-cancel-book { background: transparent; color: #ff4757; border: 2px solid #ff4757; box-sizing: border-box; }
+        .btn-cancel-book:hover { background: rgba(255, 71, 87, 0.1); box-shadow: 0 0 15px rgba(255, 71, 87, 0.3); }
+
+        /* Grid 6 แถว */
+        .car-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 20px; }
+        @media (max-width: 1600px) { .car-grid { grid-template-columns: repeat(5, 1fr); } }
+        @media (max-width: 1300px) { .car-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 1000px) { .car-grid { grid-template-columns: repeat(3, 1fr); } }
+
         .car-card { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; border: 1px solid var(--border-color); position: relative; transition: all 0.3s ease; }
         .car-card:hover { transform: translateY(-5px); border-color: #444; box-shadow: 0 15px 40px rgba(0,0,0,0.7); }
         .car-card.busy { border-color: #ff4757; opacity: 0.8; }
+        .car-card.booked { border-color: var(--summer-blue); }
+        
         .car-image-container { position: relative; width: 100%; height: 180px; background: #000; }
         .car-image { width: 100%; height: 100%; object-fit: cover; transition: 0.3s; }
         .car-card.busy .car-image { filter: grayscale(100%) brightness(40%); }
+        .car-card.booked .car-image { filter: brightness(40%); }
+        
         .cross-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 80px; color: rgba(255, 71, 87, 0.8); text-shadow: 0 0 20px #000; pointer-events: none; }
-        .tags-container { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
+        
+        /* วงกลมสถานะติดจอง */
+        .book-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85px; height: 85px; background: rgba(0, 210, 255, 0.85); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #fff; font-size: 16px; font-weight: 800; box-shadow: 0 0 25px var(--summer-blue-glow); border: 2px solid #fff; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        .book-overlay span { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+
+        .tags-container { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; flex-wrap: wrap; z-index: 5; }
         .tag-turbo { background: #ff0055; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; box-shadow: 0 2px 10px rgba(255,0,85,0.5); }
         .tag-owner { background: var(--summer-blue); color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; }
         .tag-kapi { background: var(--summer-green); color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; }
@@ -291,6 +312,21 @@
     </div>
 </div>
 
+<div class="modal" id="bookModal">
+    <div class="modal-content">
+        <h2 style="color: var(--summer-blue); margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 15px;">⏱️ ลงคิวจองรถ</h2>
+        <input type="hidden" id="bookCarId">
+        <div class="form-group">
+            <label>ระบุเวลาที่จอง (เช่น 20:30)</label>
+            <input type="time" id="bookTime" required style="border-color: var(--summer-blue); box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);">
+        </div>
+        <div class="modal-actions">
+            <button class="btn" style="background: transparent; border: 1px solid #444; color:#888" onclick="closeModal('bookModal')">CANCEL</button>
+            <button class="btn btn-add" onclick="confirmBook()">ยืนยันจอง</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const scriptURL = 'https://script.google.com/macros/s/AKfycbyWc9mJjcXlw2y09ObQgJnwwkrtoquRpyVVcmdeq1cNtWeVINteg4nLDWoGxR1RsgId/exec';
     
@@ -349,7 +385,8 @@
         isTurbo: c.isTurbo || false,
         ownerType: c.ownerType || 'owner',
         ownerName: c.ownerName || '',
-        isHidden: c.isHidden || false
+        isHidden: c.isHidden || false,
+        bookTime: c.bookTime || null
     }));
 
     function formatNumber(input) {
@@ -738,6 +775,7 @@
 
         filtered.forEach(car => {
             const isBusy = car.status === 'busy';
+            const isBooked = car.status === 'booked';
             const imgUrl = car.imageUrl || 'https://via.placeholder.com/600x400?text=No+Image';
             
             let ownerText = car.ownerType === 'kapi' ? 'รถกะปื' : 'รถaxis';
@@ -746,10 +784,11 @@
             }
 
             let html = `
-                <div class="car-card ${isBusy ? 'busy' : ''}">
+                <div class="car-card ${isBusy ? 'busy' : ''} ${isBooked ? 'booked' : ''}">
                     <div class="car-image-container">
                         <img src="${imgUrl}" class="car-image" alt="car">
                         ${isBusy ? `<div class="cross-overlay">❌</div>` : ''}
+                        ${isBooked ? `<div class="book-overlay"><span>ติดจอง</span>${car.bookTime}</div>` : ''}
                         <div class="tags-container">
                             ${car.ownerType === 'kapi' ? `<span class="tag-kapi">${ownerText}</span>` : `<span class="tag-owner">${ownerText}</span>`}
                             ${car.isTurbo ? '<span class="tag-turbo">🚀 TURBO</span>' : ''}
@@ -771,12 +810,22 @@
                         <span style="color: #FFB300; font-weight: 600;">💰 ยอดเช่า: ${car.price.toLocaleString()} sm</span>
                         <div class="countdown" id="cd-${car.id}" style="margin-top: 10px; font-weight: 600; color:var(--summer-green); line-height: 1.5;">โหลดเวลา...</div>
                     </div></div>`; 
+            } else if (isBooked) {
+                html += `</div>`;
+                if (isLoggedIn) {
+                    html += `
+                        <div class="card-actions">
+                            <button class="btn btn-cancel-book" style="flex: 1; font-size: 13px;" onclick="cancelBook(${car.id})">ยกเลิกจอง</button>
+                            <button class="btn btn-rent" style="flex: 1; font-size: 13px;" onclick="openRentModal(${car.id})">สัญญาเช่า</button>
+                        </div>`;
+                }
             } else {
                 html += `</div>`;
                 if (isLoggedIn) {
                     html += `
                         <div class="card-actions">
-                            <button class="btn btn-rent" style="flex: 1;" onclick="openRentModal(${car.id})">ลงทะเบียนสัญญา</button>
+                            <button class="btn btn-book" style="flex: 1; font-size: 13px;" onclick="openBookModal(${car.id})">จองคิว</button>
+                            <button class="btn btn-rent" style="flex: 1; font-size: 13px;" onclick="openRentModal(${car.id})">ปล่อยเช่า</button>
                         </div>`;
                 }
             }
@@ -870,6 +919,38 @@
         calculateDuration();
     }
 
+    function openBookModal(id) {
+        document.getElementById('bookCarId').value = id;
+        document.getElementById('bookTime').value = "";
+        document.getElementById('bookModal').style.display = "flex";
+    }
+
+    function confirmBook() {
+        const id = parseInt(document.getElementById('bookCarId').value);
+        const time = document.getElementById('bookTime').value;
+        if (!time) return alert("⚠️ กรุณาระบุเวลาจองให้ครบถ้วน!");
+
+        const carIndex = cars.findIndex(c => c.id === id);
+        cars[carIndex].status = "booked";
+        cars[carIndex].bookTime = time;
+
+        saveDataLocally(true);
+        closeModal('bookModal');
+        renderCars();
+        if(document.getElementById('managePage').classList.contains('active')) renderManageCars();
+    }
+
+    function cancelBook(id) {
+        if(confirm("ต้องการยกเลิกการจองรถคันนี้ใช่หรือไม่?")) {
+            const carIndex = cars.findIndex(c => c.id === id);
+            cars[carIndex].status = "available";
+            cars[carIndex].bookTime = null;
+            saveDataLocally(true);
+            renderCars();
+            if(document.getElementById('managePage').classList.contains('active')) renderManageCars();
+        }
+    }
+
     function confirmRent() {
         const id = parseInt(document.getElementById('rentCarId').value);
         const price = parseInt(document.getElementById('rentPrice').value.replace(/,/g, ''));
@@ -894,6 +975,7 @@
         car.status = "busy";
         car.price = price;
         car.endTime = new Date(endTimeValue).getTime();
+        car.bookTime = null; // เคลียร์เวลาจองเมื่อปล่อยเช่า
 
         rentalHistory.push({
             id: Date.now(),
@@ -939,6 +1021,7 @@
             car.status = "available";
             car.price = 0;
             car.endTime = null;
+            car.bookTime = null;
             saveDataLocally();
             renderManageCars();
             renderCars();
@@ -1014,7 +1097,14 @@
         });
 
         sortedCars.forEach(car => {
-            const statusText = car.status === 'busy' ? '<span style="color:#ff4757; font-weight:600;">ถูกเช่า</span>' : '<span style="color:var(--summer-green); font-weight:600;">ว่าง</span>';
+            let statusText = '';
+            if (car.status === 'busy') {
+                statusText = '<span style="color:#ff4757; font-weight:600;">ถูกเช่า</span>';
+            } else if (car.status === 'booked') {
+                statusText = '<span style="color:var(--summer-blue); font-weight:600;">ติดจอง</span>';
+            } else {
+                statusText = '<span style="color:var(--summer-green); font-weight:600;">ว่าง</span>';
+            }
             
             let ownerText = car.ownerType === 'kapi' ? 'กะปื' : 'axis';
             if (car.ownerName && car.ownerName.trim() !== '') ownerText += ` (${car.ownerName})`;
@@ -1073,7 +1163,7 @@
         
         plates.forEach(plate => {
             newId++;
-            cars.push({ id: newId, name, plate, category, imageUrl, isTurbo, ownerType, ownerName, status: "available", price: 0, endTime: null, isHidden: false });
+            cars.push({ id: newId, name, plate, category, imageUrl, isTurbo, ownerType, ownerName, status: "available", price: 0, endTime: null, bookTime: null, isHidden: false });
         });
         
         document.getElementById('newCarName').value = "";
